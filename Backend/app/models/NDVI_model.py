@@ -1,25 +1,35 @@
-from pydantic import BaseModel #typing: ignore
+from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 
+
 class NDVIRequest(BaseModel):
-    """Request model for NDVI analysis"""
-    latitude: float
-    longitude: float
-    start_date: str  # Format: YYYY-MM-DD
-    end_date: str    # Format: YYYY-MM-DD
+    """
+    Request model for NDVI analysis.
+    User can provide either:
+      - latitude & longitude (single point)
+      - OR north, south, east, west (bounding box)
+    """
+    latitude: Optional[float] = 0.0
+    longitude: Optional[float] = 0.0
+    north: Optional[float] = 0.0
+    south: Optional[float] = 0.0
+    east: Optional[float] = 0.0
+    west: Optional[float] = 0.0
+    start_date: str
+    end_date: str
 
 class NDVIResponse(BaseModel):
     """Response model for NDVI analysis"""
-    latitude: float
-    longitude: float
+    latitude: Optional[float]   # May be None if using bbox
+    longitude: Optional[float]  # May be None if using bbox
     ndvi_value: float
     date: str
     vegetation_health: str  # "Poor", "Fair", "Good", "Excellent"
     message: str
 
 class NDVIData(BaseModel):
-    """Model for NDVI data point"""
+    """Model for NDVI data point (historical)"""
     latitude: float
     longitude: float
     ndvi_value: float
