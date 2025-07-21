@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from datetime import datetime, timedelta
+from fastapi.responses import Response
 
 from app.services.NDVI_service import NDVIService
 from app.models.NDVI_model import NDVIRequest, NDVIResponse
@@ -135,3 +136,8 @@ def _get_recommendations(health_status: str) -> list:
     }
     
     return recommendations.get(health_status, ["Continue monitoring"])
+
+@router.post("/image")
+async def get_satellite_image(request: NDVIRequest):
+    return ndvi_service.get_true_color_image(request)
+
