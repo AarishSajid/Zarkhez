@@ -12,10 +12,10 @@ class NDVIRequest(BaseModel):
     """
     latitude: Optional[float] = 0.0
     longitude: Optional[float] = 0.0
-    north: Optional[float] = 0.0
-    south: Optional[float] = 0.0
-    east: Optional[float] = 0.0
-    west: Optional[float] = 0.0
+    north: Optional[float] = None
+    south: Optional[float] = None
+    east: Optional[float] = None
+    west: Optional[float] = None
     start_date: str
     end_date: str
 
