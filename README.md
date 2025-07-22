@@ -1,53 +1,103 @@
-# 🌾 Zarkhez
+## 🌱 Zarkhez
 
-**Zarkhez** is an AI-powered web app designed for farmers to better monitor and manage their fields.  
-It combines two core modules (built for scalability):
+**Zarkhez** is a scalable, modular precision agriculture platform.
+It currently offers:
 
-- 🛰 **Field Analysis**: Uses satellite imagery (Sentinel Hub) to compute NDVI, show vegetation health trends, and render true-color & heatmap images.
-- 🤖 **Crop Disease Detection**: (Coming next) A computer vision module to detect crop diseases from images and provide corrective measures via video guides.
+* **NDVI-based field analysis** using Sentinel Hub satellite data.
+* **Crop disease detection** with AI-powered computer vision, including corrective measures via curated videos.
 
-All features are built as separate API routers, making it easy to extend or add new modules.
+More features (e.g., irrigation recommendations, soil health analysis) are planned in future phases.
 
 ---
 
-## 🛠 **Project structure** (current & planned)
+## 📦 Project Structure
 
+```plaintext
 zarkhez/
 ├── backend/
-│ ├── app/
-│ │ ├── apis/ ← FastAPI routers (ndvi_api.py, disease_api.py, etc.)
-│ │ ├── models/ ← Pydantic request/response models
-│ │ ├── services/ ← Core service logic (NDVI, disease detection)
-│ │ └── tmp/ ← Temp folder for downloaded satellite images
-│ ├── main.py ← FastAPI entry point
-│ └── requirements.txt
-├── frontend/ ← Planned: React / Vue / Flutter web frontend
+│   ├── app/
+│   │   ├── api/          # FastAPI routers (e.g., ndvi, disease)
+│   │   ├── services/     # Business logic & external integrations
+│   │   ├── models/       # Pydantic schemas
+│   │   ├── core/         # Config, utilities, constants
+│   │   └── tmp/          # Temp files (e.g., downloaded satellite images)
+│   ├── tests/            # Unit & integration tests
+│   └── requirements.txt  # Python dependencies
+├── frontend/             # Planned: React / Vue / Flutter frontend
 └── README.md
+```
 
-
-> ✅ **Design for scalability**: new features (e.g., soil moisture analysis) can be added by adding new service + router.
-
----
-
-## 🚀 **Current API features** (Phase 1)
-
-✅ NDVI analysis:
-- `/api/v1/ndvi/analyze`: Calculate NDVI & get vegetation health
-- `/api/v1/ndvi/heatmap`: NDVI heatmap with cloud masking
-- `/api/v1/ndvi/image`: True color satellite image
-- `/api/v1/ndvi/history`: NDVI trend over recent weeks
-
-All endpoints are modular and documented via Swagger UI.
+✅ *Designed for scalability: add new modules easily by adding routers & services.*
 
 ---
 
-## 🧪 **Running locally (backend only)**
+## ⚙️ Features
+
+✅ **NDVI Field Analysis**
+
+* Uses Sentinel Hub API
+* Computes vegetation indices
+* Generates heatmaps & trends over time
+
+✅ **Crop Disease Detection**
+
+* AI/ML model detects diseases from crop images
+* Returns curated preventive/corrective YouTube videos
+
+📈 *Phase 2 & beyond: irrigation recommendations, soil health reports, yield prediction.*
+
+---
+
+## 🚀 Getting Started
+
+### Backend
 
 ```bash
 cd backend
+python -m venv venv
+source venv/bin/activate  # or venv\Scripts\activate on Windows
 pip install -r requirements.txt
-uvicorn main:app --reload
+uvicorn app.main:app --reload
 ```
-Then open docs:
 
-http://127.0.0.1:8000/docs
+> Make sure to set your environment variables (e.g., Sentinel Hub credentials).
+
+### Frontend
+
+Planned (React / Vue / Flutter): will be integrated with the backend APIs.
+
+---
+
+## 🧪 Testing
+
+```bash
+cd backend
+pytest
+```
+
+---
+
+## 🛠 Tech Stack
+
+* **FastAPI** – backend & APIs
+* **Pydantic** – data validation
+* **Sentinel Hub** – satellite data
+* **Custom ML models** – crop disease detection
+* Planned: **React** / **Vue** / **Flutter** frontend
+
+---
+
+## 📌 Contributing
+
+1. Fork this repo
+2. Create a new feature branch
+3. Commit changes
+4. Open a PR
+
+We welcome PRs that improve modularity, add tests, or extend features! 🌾
+
+---
+
+## 📄 License
+
+MIT License — see `LICENSE` for details.
