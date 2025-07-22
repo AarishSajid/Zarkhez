@@ -42,32 +42,39 @@ async def analyze_ndvi(request: NDVIRequest):
 
 @router.get("/history")
 async def get_ndvi_history(
-    latitude: float = Query(..., description="Latitude coordinate"),
-    longitude: float = Query(..., description="Longitude coordinate"),
-    days: int = Query(30, description="Number of days to retrieve", ge=1, le=365)
+    latitude: float = Query(..., description="Center latitude of your field"),
+    longitude: float = Query(..., description="Center longitude of your field"),
+    days: int = Query(30, description="Total days to look back", ge=1, le=365),
+    step_days: int = Query(7, description="Interval in days between measurements", ge=1, le=30)
 ):
     """
-    Get NDVI history for the specified coordinates
+    Get REAL NDVI history by calling actual NDVI calculation for each interval.
+    Example: if days=30 and step_days=7 → get NDVI every week for last month.
     """
     try:
+        print(f"DEBUG: Requested NDVI history lat={latitude}, lon={longitude}, days={days}, step_days={step_days}")
+
         # Validate coordinates
         if not (-90 <= latitude <= 90):
             raise HTTPException(status_code=400, detail="Latitude must be between -90 and 90")
-        
         if not (-180 <= longitude <= 180):
             raise HTTPException(status_code=400, detail="Longitude must be between -180 and 180")
-        
-        history = ndvi_service.get_ndvi_history(latitude, longitude, days)
+        if days < step_days:
+            raise HTTPException(status_code=400, detail="`days` must be >= `step_days`")
+
+        # Call service: real NDVI history + trend
+        history = ndvi_service.get_ndvi_history(latitude, longitude, days, step_days)
         trend = ndvi_service.analyze_trend(history)
-        
+
         return {
             "latitude": latitude,
             "longitude": longitude,
             "history": history,
             "trend_analysis": trend
         }
-        
+
     except Exception as e:
+        print("ERROR in get_ndvi_history:", str(e))
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.get("/health-status")
@@ -140,4 +147,8 @@ def _get_recommendations(health_status: str) -> list:
 @router.post("/image")
 async def get_satellite_image(request: NDVIRequest):
     return ndvi_service.get_true_color_image(request)
+
+@router.post("/heatmap")
+async def get_ndvi_heatmap_image(request: NDVIRequest):
+    return ndvi_service.get_heatmap_image(request)
 
