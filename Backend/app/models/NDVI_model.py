@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel # type: ignore
+from typing import Optional,Dict,List
 from datetime import datetime
 
 
@@ -20,12 +20,18 @@ class NDVIRequest(BaseModel):
     end_date: str
 
 class NDVIResponse(BaseModel):
-    """Response model for NDVI analysis"""
     latitude: Optional[float]   # May be None if using bbox
     longitude: Optional[float]  # May be None if using bbox
     ndvi_value: float
     date: str
     vegetation_health: str  # "Poor", "Fair", "Good", "Excellent"
+    average_ndvi: Optional[float] = None
+    min_ndvi: Optional[float] = None
+    max_ndvi: Optional[float] = None
+    valid_pixel_count: Optional[int] = None
+    health_distribution: Optional[Dict[str, int]] = None  # {"Poor": count, "Fair": count, "Good": count, "Excellent": count}
+    bbox: Optional[List[float]] = None  # [west, south, east, north]
+    mode: Optional[str] = None  # "point" or "bbox"
     message: str
 
 class NDVIData(BaseModel):
