@@ -2,10 +2,14 @@ import numpy as np
 from datetime import datetime, timedelta
 from typing import List, Dict
 from app.models.NDVI_model import NDVIRequest, NDVIResponse, NDVIData
-from sentinelhub import SHConfig, SentinelHubRequest, DataCollection, MimeType, bbox_to_dimensions, BBox  # type: ignore
+from sentinelhub import SHConfig, SentinelHubRequest, DataCollection, MimeType, bbox_to_dimensions, BBox,CRS  # type: ignore
 from fastapi import Response # type: ignore
 from PIL import Image # type: ignore
 import io,os
+from app.core.config import settings
+import logging 
+
+logger = logging.getLogger(__name__)
 
 class NDVIService:
     """Service for NDVI calculations and analysis"""
@@ -13,54 +17,36 @@ class NDVIService:
     def __init__(self):
         # Initialize Sentinel Hub config
         self.config = SHConfig()
-        self.config.sh_client_id = "9d228c34-521c-42ad-9ea3-2b5b00f1e4db"
-        self.config.sh_client_secret = "85Jwh9rPxLhL2pOYfhQUsZcBq8jPFBd6"
+        self.config.sh_client_id = settings.SH_CLIENT_ID
+        self.config.sh_client_secret = settings.SH_CLIENT_SECRET
         # Optionally: self.config.sh_base_url = 'https://services.sentinel-hub.com'
 
     def calculate_ndvi(self, request: NDVIRequest) -> NDVIResponse:
         """
-        Calculate NDVI for given coordinates and date range using Sentinel Hub
+        Calculate NDVI using Sentinel Hub data for point or bbox.
+
+        Returns:
+            NDVIResponse with NDVI stats, bbox info, etc.
         """
         try:
-            print(f"DEBUG: north={request.north} ({type(request.north)}), south={request.south} ({type(request.south)}), east={request.east} ({type(request.east)}), west={request.west} ({type(request.west)})")
-
-            # Use bbox if all numbers & valid
-            if all(isinstance(v, (int, float)) for v in [request.north, request.south, request.east, request.west]):
-                if request.north <= request.south:
-                    raise ValueError("North must be greater than south")
-                if request.east <= request.west:
-                    raise ValueError("East must be greater than west")
-                if not (-90 <= request.north <= 90): raise ValueError("North out of range")
-                if not (-90 <= request.south <= 90): raise ValueError("South out of range")
-                if not (-180 <= request.east <= 180): raise ValueError("East out of range")
-                if not (-180 <= request.west <= 180): raise ValueError("West out of range")
-                print("Using bounding box mode")
-                bbox = BBox([request.west, request.south, request.east, request.north], crs='EPSG:4326')
-                response_lat = None
-                response_lon = None
-
-            # Else use center point
-            elif isinstance(request.latitude, (int, float)) and isinstance(request.longitude, (int, float)):
-                if not (-90 <= request.latitude <= 90): raise ValueError("Latitude out of range")
-                if not (-180 <= request.longitude <= 180): raise ValueError("Longitude out of range")
-                print("Using point mode")
-                delta = 0.01
-                bbox = BBox([
-                    request.longitude - delta, request.latitude - delta,
-                    request.longitude + delta, request.latitude + delta
-                ], crs='EPSG:4326')
-                response_lat = request.latitude
-                response_lon = request.longitude
-
+            # Decide mode
+            if request.north and request.south and request.east and request.west:
+                mode = "bbox"
+                bbox = BBox([request.west, request.south, request.east, request.north], crs=CRS.WGS84)
+                logger.debug(f"Using bbox mode with bbox={bbox}")
             else:
-                print("Neither bbox nor point were valid numbers")
-                raise ValueError("Must provide valid bbox or point coordinates")
+                mode = "point"
+                delta = 0.01  # ~2km area
+                bbox = BBox([request.longitude - delta, request.latitude - delta,
+                            request.longitude + delta, request.latitude + delta], crs=CRS.WGS84)
+                logger.debug(f"Using point mode (expanded) with bbox={bbox}")
 
-            print("Created bbox:", bbox)
-
-            size = bbox_to_dimensions(bbox, resolution=10)
-            print("Calculated size:", size)
-
+            resolution = 10  # 10 meters
+            width = int((bbox.max_x - bbox.min_x) * (111320 / resolution))  # 1 degree ≈ ~111.32 km
+            height = int((bbox.max_y - bbox.min_y) * (111320 / resolution))
+            size = (width, height)
+            logger.debug(f"Calculated size: {size} for bbox {bbox}")
+            # Sentinel request
             evalscript = """
             //VERSION=3
             function setup() {
@@ -69,16 +55,14 @@ class NDVIService:
                     output: { bands: 1, sampleType: "FLOAT32" }
                 };
             }
-
             function evaluatePixel(sample) {
-                // Mask clouds & snow
                 if ([3, 8, 9, 10, 11].includes(sample.SCL)) return [NaN];
                 let ndvi = (sample.B08 - sample.B04) / (sample.B08 + sample.B04);
                 return [ndvi];
             }
             """
 
-            request_sentinel = SentinelHubRequest(
+            request_payload = SentinelHubRequest(
                 evalscript=evalscript,
                 input_data=[
                     SentinelHubRequest.input_data(
@@ -86,51 +70,59 @@ class NDVIService:
                         time_interval=(request.start_date, request.end_date)
                     )
                 ],
-                responses=[SentinelHubRequest.output_response('default', MimeType.TIFF)],
+                responses=[SentinelHubRequest.output_response("default", MimeType.TIFF)],
                 bbox=bbox,
                 size=size,
                 config=self.config
             )
 
-            ndvi_data = request_sentinel.get_data()
-            print("Received data from Sentinel:", type(ndvi_data), len(ndvi_data))
+            ndvi_data = request_payload.get_data()
+            logger.debug(f"Received data type: {type(ndvi_data)}, length: {len(ndvi_data)}")
             ndvi_array = ndvi_data[0].squeeze()
-            print("NDVI array shape:", ndvi_array.shape)
-            print("NDVI array min:", np.nanmin(ndvi_array))
-            print("NDVI array max:", np.nanmax(ndvi_array))
-            print("NDVI array mean:", np.nanmean(ndvi_array))
-            print("NDVI array median:", np.nanmedian(ndvi_array))
+            logger.debug(f"NDVI array shape: {ndvi_array.shape}")
 
-            ndvi_value_raw = np.nanmedian(ndvi_array)
-            ndvi_value = float(ndvi_value_raw) if not np.isnan(ndvi_value_raw) else 0.0
+            if np.isnan(ndvi_array).all():
+                logger.debug("All values are NaN → no valid pixels")
+                average_ndvi = min_ndvi = max_ndvi = None
+                valid_pixels = 0
+                health_distribution = {}
+                ndvi_value_raw = 0.0
+                vegetation_health = "Unknown"
+            else:
+                average_ndvi = float(np.nanmean(ndvi_array))
+                min_ndvi = float(np.nanmin(ndvi_array))
+                max_ndvi = float(np.nanmax(ndvi_array))
+                valid_pixels = int(np.count_nonzero(~np.isnan(ndvi_array)))
+                health_distribution = {
+                    "Poor": int(np.sum(ndvi_array < 0.2)),
+                    "Fair": int(np.sum((ndvi_array >= 0.2) & (ndvi_array < 0.4))),
+                    "Good": int(np.sum((ndvi_array >= 0.4) & (ndvi_array < 0.6))),
+                    "Excellent": int(np.sum(ndvi_array >= 0.6))
+                }
+                ndvi_value_raw = float(np.nanmedian(ndvi_array))
+                vegetation_health = self.get_vegetation_health(ndvi_value_raw)
 
-            # Clamp extremes
-            ndvi_value = min(max(ndvi_value, -0.2), 0.8)
-
-            valid_pixels = np.count_nonzero(~np.isnan(ndvi_array))
-            print(f"Valid NDVI pixels after masking: {valid_pixels}")
-
-            health_status = self.get_vegetation_health(ndvi_value)
+                logger.debug(f"Computed stats: avg={average_ndvi}, min={min_ndvi}, max={max_ndvi}, valid_pixels={valid_pixels}")
 
             return NDVIResponse(
-                latitude=response_lat,
-                longitude=response_lon,
-                ndvi_value=round(ndvi_value, 3),
+                latitude=request.latitude,
+                longitude=request.longitude,
+                ndvi_value=round(ndvi_value_raw, 3) if ndvi_value_raw else 0.0,
                 date=request.end_date,
-                vegetation_health=health_status,
-                message="NDVI analysis from Sentinel Hub"
+                vegetation_health=vegetation_health,
+                average_ndvi=round(average_ndvi, 3) if average_ndvi is not None else None,
+                min_ndvi=round(min_ndvi, 3) if min_ndvi is not None else None,
+                max_ndvi=round(max_ndvi, 3) if max_ndvi is not None else None,
+                valid_pixel_count=valid_pixels,
+                health_distribution=health_distribution,
+                bbox=[bbox.min_x, bbox.min_y, bbox.max_x, bbox.max_y],
+                mode=mode,
+                message="NDVI analysis complete"
             )
 
         except Exception as e:
-            print("ERROR in calculate_ndvi:", str(e))
-            return NDVIResponse(
-                latitude=None,
-                longitude=None,
-                ndvi_value=0.0,
-                date=request.end_date,
-                vegetation_health="Unknown",
-                message=f"Error fetching NDVI: {str(e)}"
-            )
+            logger.error(f"ERROR in calculate_ndvi: {e}")
+            raise
 
 
     def get_true_color_image(self, request: NDVIRequest) -> Response:
@@ -274,78 +266,97 @@ class NDVIService:
 
         return Response(content=buffer.read(), media_type="image/png")
 
-
     def get_ndvi_history(self, lat: float, lon: float, days: int = 30, step_days: int = 7) -> List[Dict]:
         """
-        Fetch real NDVI history by calling calculate_ndvi for the center point
-        at each time interval. Skips points where NDVI is zero (i.e., missing or invalid data).
+        Fetch NDVI history using a small bbox around the center point to get real pixels.
 
         :param lat: Latitude of center point
         :param lon: Longitude of center point
         :param days: Total number of days to look back
         :param step_days: Interval in days between measurements
-        :return: List of dicts with date, ndvi_value, vegetation_health
+        :return: List of dicts with date, ndvi_value, average_ndvi etc.
         """
         history = []
         today = datetime.now()
         num_points = max(1, days // step_days)
+        delta = 0.005  # about ~500m around the center
 
-        print(f"DEBUG: Requested NDVI history lat={lat}, lon={lon}, days={days}, step_days={step_days}")
+        logger.debug(f"Requested NDVI history lat={lat}, lon={lon}, days={days}, step_days={step_days}")
 
         for i in range(num_points):
             end_date = (today - timedelta(days=i * step_days)).strftime("%Y-%m-%d")
             start_date = (today - timedelta(days=(i * step_days) + 1)).strftime("%Y-%m-%d")
 
-            # ONLY use latitude & longitude → keeps bbox fields None → forces point mode
             request = NDVIRequest(
-                latitude=lat,
-                longitude=lon,
+                north=lat + delta,
+                south=lat - delta,
+                east=lon + delta,
+                west=lon - delta,
                 start_date=start_date,
                 end_date=end_date
             )
 
             response = self.calculate_ndvi(request)
 
-            if response.ndvi_value != 0.0:
+            logger.debug(f"Date {end_date}: valid_pixel_count={response.valid_pixel_count}, ndvi_value={response.ndvi_value}")
+
+            if response.valid_pixel_count and response.valid_pixel_count > 0:
                 history.append({
                     "date": end_date,
                     "ndvi_value": round(response.ndvi_value, 3),
-                    "vegetation_health": response.vegetation_health
+                    "average_ndvi": round(response.average_ndvi, 3) if response.average_ndvi is not None else None,
+                    "min_ndvi": round(response.min_ndvi, 3) if response.min_ndvi is not None else None,
+                    "max_ndvi": round(response.max_ndvi, 3) if response.max_ndvi is not None else None,
+                    "vegetation_health": response.vegetation_health,
+                    "valid_pixel_count": response.valid_pixel_count
                 })
+                logger.debug(f"Added date {end_date} with NDVI={response.ndvi_value}")
             else:
-                print(f"DEBUG: Skipped date {end_date} due to missing NDVI data (value=0.0)")
+                logger.debug(f"Skipped date {end_date} due to missing NDVI data (valid pixels=0)")
 
         # Return oldest first
         return list(reversed(history))
 
+    def analyze_trend(self, ndvi_history: list) -> dict:
+        """
+        Analyze NDVI trend over time using linear regression.
 
-
-    def analyze_trend(self, ndvi_history: List[Dict]) -> Dict:
-        """Analyze NDVI trend over time"""
+        :param ndvi_history: list of dicts with 'ndvi_value' per date
+        :return: dict with trend label, slope, current_avg, message
+        """
         if len(ndvi_history) < 2:
-            return {"trend": "insufficient_data", "message": "Not enough data for trend analysis"}
+            return {
+                "trend": "insufficient_data",
+                "slope": 0.0,
+                "current_avg": None,
+                "message": "Not enough data for trend analysis"
+            }
 
         values = [item["ndvi_value"] for item in ndvi_history]
+        dates = list(range(len(values)))  # e.g., [0,1,2,3...]
 
-        if len(values) >= 7:
-            recent_avg = np.mean(values[-7:])
-            older_avg = np.mean(values[:-7])
+        # Fit linear trend: degree=1
+        slope, intercept = np.polyfit(dates, values, 1)
 
-            if recent_avg > older_avg + 0.05:
-                trend = "improving"
-            elif recent_avg < older_avg - 0.05:
-                trend = "declining"
-            else:
-                trend = "stable"
+        # Decide label based on slope
+        if slope > 0.05:
+            trend_label = "improving fast"
+        elif slope > 0.01:
+            trend_label = "slightly improving"
+        elif slope < -0.05:
+            trend_label = "declining fast"
+        elif slope < -0.01:
+            trend_label = "slightly declining"
         else:
-            trend = "stable"
+            trend_label = "stable"
 
         return {
-            "trend": trend,
-            "current_avg": round(np.mean(values[-7:]) if len(values) >= 7 else np.mean(values), 3),
-            "message": f"Vegetation health is {trend}"
+            "trend": trend_label,
+            "slope": round(slope, 4),
+            "current_avg": round(np.mean(values), 3),
+            "message": f"Vegetation health trend: {trend_label}"
         }
-        
+    
     def get_vegetation_health(self, ndvi_value: float) -> str:
         if ndvi_value < 0.2:
             return "Poor"
