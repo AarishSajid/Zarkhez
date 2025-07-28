@@ -1,19 +1,19 @@
-from fastapi import FastAPI
-from app.apis import NDVI_api  # Import your NDVI router
+from fastapi import FastAPI # type: ignore
+from app.apis import NDVI_api, auth_api, fields_api  # Import your NDVI router
 # from app.api import disease, auth  # Your other routers
+from dotenv import load_dotenv
+load_dotenv()
+
 
 app = FastAPI(
     title="Agricultural Monitoring API",
     description="API for disease detection and NDVI analysis",
     version="1.0.0"
 )
-
-# Include NDVI router
-app.include_router(NDVI_api.router, prefix="/api/v1")
-
-# Include other routers as you create them
-# app.include_router(disease.router, prefix="/api/v1")
-# app.include_router(auth.router, prefix="/api/v1")
+# Include your routers
+app.include_router(NDVI_api.router, prefix="/ndvi")
+app.include_router(auth_api.router, prefix="/auth")
+app.include_router(fields_api.router, prefix="/fields")
 
 @app.get("/")
 async def root():
