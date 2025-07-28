@@ -3,6 +3,8 @@ from pydantic_settings import BaseSettings # type: ignore
 class Settings(BaseSettings):
     SH_CLIENT_ID: str
     SH_CLIENT_SECRET: str
+    jwt_secret: str
+    database_url: str
 
     class Config:
         env_file = ".env"
