@@ -1,13 +1,13 @@
-from fastapi import APIRouter, HTTPException, Query, Depends # type: ignore
-from sqlalchemy.orm import Session # type: ignore
-from typing import Optional
+from fastapi import APIRouter, HTTPException, Query, Depends  # type: ignore
+from sqlalchemy.orm import Session 
 from datetime import datetime, timedelta
+from typing import Annotated
 
 from app.services.NDVI_service import NDVIService
 from app.models.NDVI_model import NDVIRequest, NDVIResponse
-from app.core.security import get_current_user
+from app.core.security import get_current_user, oauth2_scheme
 from app.core.database import get_db
-from app.models import db_models
+from app.models import db_model
 
 router = APIRouter(prefix="/ndvi", tags=["NDVI"])
 ndvi_service = NDVIService()
@@ -17,14 +17,12 @@ async def analyze_ndvi_for_field(
     field_id: int,
     start_date: str,
     end_date: str,
-    db: Session = Depends(get_db),
-    current_user: db_models.User = Depends(get_current_user)
+    db: Annotated[Session, Depends(get_db)],
+    token: str = Depends(oauth2_scheme),
+    current_user: db_model.User = Depends(get_current_user)
 ):
-    """
-    Analyze NDVI for a user's saved field by field_id and date range.
-    """
+    print("Token received:", token)
     try:
-        # Validate dates
         start = datetime.strptime(start_date, "%Y-%m-%d")
         end = datetime.strptime(end_date, "%Y-%m-%d")
         if start > end:
@@ -32,22 +30,16 @@ async def analyze_ndvi_for_field(
         if end > datetime.now():
             raise HTTPException(status_code=400, detail="End date cannot be in the future")
 
-        # Find field & check ownership
-        field = db.query(db_models.Field).filter(
-            db_models.Field.id == field_id,
-            db_models.Field.user_id == current_user.id
+        field = db.query(db_model.Field).filter(
+            db_model.Field.id == field_id,
+            db_model.Field.user_id == current_user.id
         ).first()
         if not field:
             raise HTTPException(status_code=404, detail="Field not found or does not belong to user")
 
-        # Build NDVIRequest from field bbox
         request = NDVIRequest(
-            north=field.north,
-            south=field.south,
-            east=field.east,
-            west=field.west,
-            start_date=start_date,
-            end_date=end_date
+            north=field.north, south=field.south, east=field.east, west=field.west,
+            start_date=start_date, end_date=end_date
         )
         result = ndvi_service.calculate_ndvi(request)
         return result
@@ -57,31 +49,27 @@ async def analyze_ndvi_for_field(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-
 @router.get("/history")
 async def get_ndvi_history_for_field(
     field_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    token: str = Depends(oauth2_scheme),
+    current_user: db_model.User = Depends(get_current_user),
     days: int = Query(30, description="Total days to look back", ge=1, le=365),
-    step_days: int = Query(7, description="Interval in days between measurements", ge=1, le=30),
-    db: Session = Depends(get_db),
-    current_user: db_models.User = Depends(get_current_user)
+    step_days: int = Query(7, description="Interval in days between measurements", ge=1, le=30)
 ):
-    """
-    Get NDVI history and trend for a user's saved field.
-    """
+    print("Token received:", token)
     try:
         if days < step_days:
             raise HTTPException(status_code=400, detail="`days` must be >= `step_days`")
 
-        # Find field & check ownership
-        field = db.query(db_models.Field).filter(
-            db_models.Field.id == field_id,
-            db_models.Field.user_id == current_user.id
+        field = db.query(db_model.Field).filter(
+            db_model.Field.id == field_id,
+            db_model.Field.user_id == current_user.id
         ).first()
         if not field:
             raise HTTPException(status_code=404, detail="Field not found or does not belong to user")
 
-        # Use center point (average lat/lon)
         center_lat = (field.north + field.south) / 2
         center_lon = (field.east + field.west) / 2
 
@@ -100,18 +88,14 @@ async def get_ndvi_history_for_field(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-
-# ✅ Keep other endpoints unchanged for now: image, heatmap, health-status
-# These still use free coords; can upgrade later to use field_id too
-
 @router.get("/health-status")
 async def get_vegetation_health(
     latitude: float = Query(..., description="Latitude coordinate"),
-    longitude: float = Query(..., description="Longitude coordinate")
+    longitude: float = Query(..., description="Longitude coordinate"),
+    token: str = Depends(oauth2_scheme),
+    current_user: db_model.User = Depends(get_current_user)
 ):
-    """
-    Get current vegetation health status for given coordinates
-    """
+    print("Token received:", token)
     try:
         today = datetime.now()
         request = NDVIRequest(
@@ -133,9 +117,25 @@ async def get_vegetation_health(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+@router.post("/image")
+async def get_satellite_image(
+    request: NDVIRequest,
+    token: str = Depends(oauth2_scheme),
+    current_user: db_model.User = Depends(get_current_user)
+):
+    print("Token received:", token)
+    return ndvi_service.get_true_color_image(request)
+
+@router.post("/heatmap")
+async def get_ndvi_heatmap_image(
+    request: NDVIRequest,
+    token: str = Depends(oauth2_scheme),
+    current_user: db_model.User = Depends(get_current_user)
+):
+    print("Token received:", token)
+    return ndvi_service.get_heatmap_image(request)
 
 def _get_recommendations(health_status: str) -> list:
-    # (same as before)
     recommendations = {
         "Poor": [
             "Consider irrigation if water is available",
@@ -160,12 +160,3 @@ def _get_recommendations(health_status: str) -> list:
         ]
     }
     return recommendations.get(health_status, ["Continue monitoring"])
-
-
-@router.post("/image")
-async def get_satellite_image(request: NDVIRequest):
-    return ndvi_service.get_true_color_image(request)
-
-@router.post("/heatmap")
-async def get_ndvi_heatmap_image(request: NDVIRequest):
-    return ndvi_service.get_heatmap_image(request)
