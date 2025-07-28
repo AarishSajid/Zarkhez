@@ -124,7 +124,6 @@ class NDVIService:
             logger.error(f"ERROR in calculate_ndvi: {e}")
             raise
 
-
     def get_true_color_image(self, request: NDVIRequest) -> Response:
         """
         Fetch true color satellite image from Sentinel Hub as PNG.
