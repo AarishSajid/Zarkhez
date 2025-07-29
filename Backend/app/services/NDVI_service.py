@@ -235,11 +235,14 @@ class NDVIService:
             }
             let ndvi = (sample.B08 - sample.B04) / (sample.B08 + sample.B04);
             if (ndvi < 0.0) return [165, 0, 38];
-            else if (ndvi < 0.2) return [215, 48, 39];
-            else if (ndvi < 0.4) return [244, 109, 67];
-            else if (ndvi < 0.6) return [253, 174, 97];
-            else if (ndvi < 0.8) return [254, 224, 144];
-            else return [255, 255, 191];
+            else if (ndvi < 0.1) return [215, 48, 39];
+            else if (ndvi < 0.2) return [244, 109, 67];
+            else if (ndvi < 0.3) return [253, 174, 97];
+            else if (ndvi < 0.4) return [254, 224, 144];
+            else if (ndvi < 0.5) return [173, 221, 142];    
+            else if (ndvi < 0.6) return [120, 198, 121];   
+            else if (ndvi < 0.7) return [49, 163, 84];      
+            else return [0, 104, 55];  ;
         }
         """
 
