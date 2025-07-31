@@ -6,8 +6,6 @@ from app.models import fields_model, db_model
 from app.core.security import get_current_user,oauth2_scheme
 from app.core.database import get_db
 
-# ✅ Add this: tells Swagger that protected routes need Bearer token
-
 
 router = APIRouter(
     prefix="/fields",
@@ -18,7 +16,7 @@ router = APIRouter(
 def add_field(
     field_data: fields_model.FieldCreate,
     db: Annotated[Session, Depends(get_db)],
-    token: str = Depends(oauth2_scheme),  # ✅ tells OpenAPI: needs Bearer token
+    token: str = Depends(oauth2_scheme),  
     current_user: db_model.User = Depends(get_current_user)
 ):
     print("Token received:", token)

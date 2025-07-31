@@ -17,12 +17,16 @@ def register(
     user_data: auth_model.UserCreate,
     db: Annotated[Session, Depends(get_db)]
 ):
-    existing = db.query(db_model.User).filter(db_model.User.email == user_data.email).first()
+    existing = db.query(db_model.User).filter(db_model.User.phone == user_data.phone).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(status_code=400, detail="Phone number already registered")
 
     hashed = auth_service.hash_password(user_data.password)
-    new_user = db_model.User(email=user_data.email, hashed_password=hashed)
+    new_user = db_model.User(
+        name=user_data.name,
+        phone=user_data.phone,
+        hashed_password=hashed
+    )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -36,7 +40,7 @@ def login(
     db: Annotated[Session, Depends(get_db)]
 ):
     # Note: form_data.username is actually the email
-    user = db.query(db_model.User).filter(db_model.User.email == form_data.username).first()
+    user = db.query(db_model.User).filter(db_model.User.phone == form_data.username).first()
     if not user or not auth_service.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 

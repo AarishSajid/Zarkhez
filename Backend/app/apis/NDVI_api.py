@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Annotated
 
 from app.services.NDVI_service import NDVIService
-from app.models.NDVI_model import NDVIRequest, NDVIResponse
+from app.models.NDVI_model import NDVIRequest, NDVIResponse, NDVIFieldRequest
 from app.core.security import get_current_user, oauth2_scheme
 from app.core.database import get_db
 from app.models import db_model
@@ -12,42 +12,42 @@ from app.models import db_model
 router = APIRouter(prefix="/ndvi", tags=["NDVI"])
 ndvi_service = NDVIService()
 
+from app.models.NDVI_model import NDVIFieldRequest
+
 @router.post("/analyze", response_model=NDVIResponse)
 async def analyze_ndvi_for_field(
-    field_id: int,
-    start_date: str,
-    end_date: str,
+    req: NDVIFieldRequest,
     db: Annotated[Session, Depends(get_db)],
     token: str = Depends(oauth2_scheme),
     current_user: db_model.User = Depends(get_current_user)
 ):
     print("Token received:", token)
-    try:
-        start = datetime.strptime(start_date, "%Y-%m-%d")
-        end = datetime.strptime(end_date, "%Y-%m-%d")
-        if start > end:
-            raise HTTPException(status_code=400, detail="Start date must be before end date")
-        if end > datetime.now():
-            raise HTTPException(status_code=400, detail="End date cannot be in the future")
+    # Validate dates
+    start = datetime.strptime(req.start_date, "%Y-%m-%d")
+    end = datetime.strptime(req.end_date, "%Y-%m-%d")
+    if start > end:
+        raise HTTPException(status_code=400, detail="Start date must be before end date")
+    if end > datetime.now():
+        raise HTTPException(status_code=400, detail="End date cannot be in the future")
 
-        field = db.query(db_model.Field).filter(
-            db_model.Field.id == field_id,
-            db_model.Field.user_id == current_user.id
-        ).first()
-        if not field:
-            raise HTTPException(status_code=404, detail="Field not found or does not belong to user")
+    # Find field & check ownership
+    field = db.query(db_model.Field).filter(
+        db_model.Field.id == req.field_id,
+        db_model.Field.user_id == current_user.id
+    ).first()
+    if not field:
+        raise HTTPException(status_code=404, detail="Field not found or does not belong to user")
 
-        request = NDVIRequest(
-            north=field.north, south=field.south, east=field.east, west=field.west,
-            start_date=start_date, end_date=end_date
-        )
-        result = ndvi_service.calculate_ndvi(request)
-        return result
-
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+    ndvi_request = NDVIRequest(
+        north=field.north,
+        south=field.south,
+        east=field.east,
+        west=field.west,
+        start_date=req.start_date,
+        end_date=req.end_date
+    )
+    result = ndvi_service.calculate_ndvi(ndvi_request)
+    return result
 
 @router.get("/history")
 async def get_ndvi_history_for_field(
@@ -118,22 +118,54 @@ async def get_vegetation_health(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post("/image")
-async def get_satellite_image(
-    request: NDVIRequest,
+async def get_satellite_image_for_field(
+    req: NDVIFieldRequest,
+    db: Annotated[Session, Depends(get_db)],
     token: str = Depends(oauth2_scheme),
     current_user: db_model.User = Depends(get_current_user)
 ):
     print("Token received:", token)
-    return ndvi_service.get_true_color_image(request)
+    field = db.query(db_model.Field).filter(
+        db_model.Field.id == req.field_id,
+        db_model.Field.user_id == current_user.id
+    ).first()
+    if not field:
+        raise HTTPException(status_code=404, detail="Field not found or does not belong to user")
+
+    ndvi_req = NDVIRequest(
+        north=field.north,
+        south=field.south,
+        east=field.east,
+        west=field.west,
+        start_date=req.start_date,
+        end_date=req.end_date
+    )
+    return ndvi_service.get_true_color_image(ndvi_req)
 
 @router.post("/heatmap")
-async def get_ndvi_heatmap_image(
-    request: NDVIRequest,
+async def get_ndvi_heatmap_image_for_field(
+    req: NDVIFieldRequest,
+    db: Annotated[Session, Depends(get_db)],
     token: str = Depends(oauth2_scheme),
     current_user: db_model.User = Depends(get_current_user)
 ):
     print("Token received:", token)
-    return ndvi_service.get_heatmap_image(request)
+    field = db.query(db_model.Field).filter(
+        db_model.Field.id == req.field_id,
+        db_model.Field.user_id == current_user.id
+    ).first()
+    if not field:
+        raise HTTPException(status_code=404, detail="Field not found or does not belong to user")
+
+    ndvi_req = NDVIRequest(
+        north=field.north,
+        south=field.south,
+        east=field.east,
+        west=field.west,
+        start_date=req.start_date,
+        end_date=req.end_date
+    )
+    return ndvi_service.get_heatmap_image(ndvi_req)
 
 def _get_recommendations(health_status: str) -> list:
     recommendations = {
