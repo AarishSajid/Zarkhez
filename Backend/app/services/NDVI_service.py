@@ -242,7 +242,8 @@ class NDVIService:
             else if (ndvi < 0.5) return [173, 221, 142];    
             else if (ndvi < 0.6) return [120, 198, 121];   
             else if (ndvi < 0.7) return [49, 163, 84];      
-            else return [0, 104, 55];  ;
+            else return [0, 104, 55];                       
+
         }
         """
 
