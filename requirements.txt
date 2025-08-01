@@ -18,3 +18,7 @@ numpy
 Pillow
 python-dateutil
 python-multipart
+
+sentinelhub 
+
+tensorflow
