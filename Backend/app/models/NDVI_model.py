@@ -41,3 +41,14 @@ class NDVIData(BaseModel):
     ndvi_value: float
     date: datetime
     created_at: datetime = datetime.now()
+
+class NDVIFieldRequest(BaseModel):
+    """Request model for NDVI analysis by field"""
+    field_id: int
+    start_date: str
+    end_date: str
+
+class NDVIHistoryRequest(BaseModel):
+    field_id: int
+    days: int 
+    step_days: int 
