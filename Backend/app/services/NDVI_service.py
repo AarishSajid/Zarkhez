@@ -269,7 +269,7 @@ class NDVIService:
 
         return Response(content=buffer.read(), media_type="image/png")
 
-    def get_ndvi_history(self, lat: float, lon: float, days: int = 30, step_days: int = 7) -> List[Dict]:
+    def get_ndvi_history(self, lat: float, lon: float, days: int , step_days: int ) -> List[Dict]:
         """
         Fetch NDVI history using a small bbox around the center point to get real pixels.
 

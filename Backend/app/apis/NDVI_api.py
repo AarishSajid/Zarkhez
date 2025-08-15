@@ -1,10 +1,11 @@
 from fastapi import APIRouter, HTTPException, Query, Depends  # type: ignore
-from sqlalchemy.orm import Session 
+from sqlalchemy.orm import Session # type: ignore
 from datetime import datetime, timedelta
 from typing import Annotated
+import traceback
 
 from app.services.NDVI_service import NDVIService
-from app.models.NDVI_model import NDVIRequest, NDVIResponse, NDVIFieldRequest
+from app.models.NDVI_model import NDVIRequest, NDVIResponse, NDVIFieldRequest, NDVIHistoryRequest
 from app.core.security import get_current_user, oauth2_scheme
 from app.core.database import get_db
 from app.models import db_model
@@ -49,35 +50,34 @@ async def analyze_ndvi_for_field(
     result = ndvi_service.calculate_ndvi(ndvi_request)
     return result
 
-@router.get("/history")
+@router.post("/history")  # switched from GET to POST for JSON body
 async def get_ndvi_history_for_field(
-    field_id: int,
+    req: NDVIHistoryRequest,
     db: Annotated[Session, Depends(get_db)],
     token: str = Depends(oauth2_scheme),
-    current_user: db_model.User = Depends(get_current_user),
-    days: int = Query(30, description="Total days to look back", ge=1, le=365),
-    step_days: int = Query(7, description="Interval in days between measurements", ge=1, le=30)
+    current_user: db_model.User = Depends(get_current_user)
 ):
     print("Token received:", token)
     try:
-        if days < step_days:
+        if req.days < req.step_days:
             raise HTTPException(status_code=400, detail="`days` must be >= `step_days`")
 
         field = db.query(db_model.Field).filter(
-            db_model.Field.id == field_id,
+            db_model.Field.id == req.field_id,
             db_model.Field.user_id == current_user.id
         ).first()
         if not field:
             raise HTTPException(status_code=404, detail="Field not found or does not belong to user")
 
-        center_lat = (field.north + field.south) / 2
-        center_lon = (field.east + field.west) / 2
+        # Ensure numeric
+        center_lat = (float(field.north) + float(field.south)) / 2
+        center_lon = (float(field.east) + float(field.west)) / 2
 
-        history = ndvi_service.get_ndvi_history(center_lat, center_lon, days, step_days)
+        history = ndvi_service.get_ndvi_history(center_lat, center_lon, req.days, req.step_days)
         trend = ndvi_service.analyze_trend(history)
 
         return {
-            "field_id": field_id,
+            "field_id": req.field_id,
             "field_name": field.name,
             "latitude": center_lat,
             "longitude": center_lon,
@@ -86,6 +86,7 @@ async def get_ndvi_history_for_field(
         }
 
     except Exception as e:
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.get("/health-status")

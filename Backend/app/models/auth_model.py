@@ -1,7 +1,8 @@
-from pydantic import BaseModel, EmailStr # type: ignore
+from pydantic import BaseModel# type: ignore
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    name: str
+    phone: str
     password: str
 
 class Token(BaseModel):
